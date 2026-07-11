@@ -18,13 +18,13 @@ const DONE_KEY = "quackpot-tutorial-done";
 
 // Pink is palette index 6 (#f15bb5): the color the walkthrough merges + orders.
 const PINK_DUCK = 6;
-// Hearts granted at the start of the walkthrough so every interactive purchase
-// step is affordable no matter which options the player picks. Worst case:
-//   priciest attachment unlock (laser) 220
-// + ring-toss build                      40
-// + ring-toss upgrade (Lv1->2)           30
-// + cheapest event (cotton candy)        50
-// = 340, so 400 leaves comfortable headroom (plus the +10 from the order step).
+// Hearts granted at the start of the walkthrough so every guided purchase is
+// affordable. Guided path:
+//   Automatic unlock  150
+// + ring-toss build    40
+// + ring-toss upgrade  30
+// + cheapest event     50
+// = 270, so 400 leaves comfortable headroom (plus the +10 from the order step).
 const START_HEARTS = 400;
 
 type Screen = "pond" | "merge" | "carnival";
@@ -36,10 +36,13 @@ type AutoTrigger =
   | "merge"
   | "fulfill"
   | "back"
+  | "openUpgrades"
   | "buyUpgrade"
+  | "unlockAutomatic"
   | "openCarnival"
   | "placeBuilding"
   | "upgradeBuilding"
+  | "openEvents"
   | "buyEvent";
 
 interface TutStep {
@@ -48,6 +51,10 @@ interface TutStep {
   // The control to spotlight. Resolved lazily each frame (elements come and go
   // as screens open/close). Undefined = no spotlight.
   target?: () => HTMLElement | null;
+  // Optional second control to spotlight simultaneously (e.g. highlight both the
+  // merged duck on the grid *and* the order card it should be dragged onto). When
+  // both this and `target` resolve, a two-hole cut-out dims everything else.
+  target2?: () => HTMLElement | null;
   // Screen this step belongs to; the overlay hides while on any other screen.
   // Undefined = show on any screen.
   screen?: Screen;
@@ -91,6 +98,23 @@ const CSS = `
 @keyframes tut-pulse {
   0%, 100% { border-color: #ffd23f; }
   50% { border-color: #fff3b0; }
+}
+
+/* Two-hole cut-out: an evenodd path dims everything except two rectangular
+   holes (a single box-shadow spotlight can only cut one hole). The rings are
+   drawn as stroked rects over each hole. */
+#tutorial-layer .tut-cutout {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none;
+}
+#tutorial-layer .tut-cutout-fill { fill: rgba(6,10,22,0.72); }
+#tutorial-layer .tut-ring {
+  fill: none; stroke: #ffd23f; stroke-width: 3;
+  animation: tut-ring-pulse 1.4s ease-in-out infinite;
+}
+@keyframes tut-ring-pulse {
+  0%, 100% { stroke: #ffd23f; }
+  50% { stroke: #fff3b0; }
 }
 
 /* Text bubble. */
@@ -146,6 +170,10 @@ export class TutorialController implements System {
   private root: HTMLDivElement;
   private dim: HTMLDivElement;
   private spot: HTMLDivElement;
+  private cutout: SVGSVGElement;
+  private cutoutFill: SVGPathElement;
+  private ringA: SVGRectElement;
+  private ringB: SVGRectElement;
   private bubble: HTMLDivElement;
   private textEl: HTMLDivElement;
   private actionsEl: HTMLDivElement;
@@ -189,6 +217,11 @@ export class TutorialController implements System {
     this.root.innerHTML = `
       <div class="tut-dim" style="display:none"></div>
       <div class="tut-spot" style="display:none"></div>
+      <svg class="tut-cutout" style="display:none">
+        <path class="tut-cutout-fill" fill-rule="evenodd"></path>
+        <rect class="tut-ring" data-ring="a"></rect>
+        <rect class="tut-ring" data-ring="b"></rect>
+      </svg>
       <div class="tut-bubble" style="display:none">
         <div class="tut-arrow"></div>
         <div class="tut-text"></div>
@@ -198,6 +231,16 @@ export class TutorialController implements System {
 
     this.dim = this.root.querySelector(".tut-dim") as HTMLDivElement;
     this.spot = this.root.querySelector(".tut-spot") as HTMLDivElement;
+    this.cutout = this.root.querySelector(".tut-cutout") as unknown as SVGSVGElement;
+    this.cutoutFill = this.root.querySelector(
+      ".tut-cutout-fill"
+    ) as unknown as SVGPathElement;
+    this.ringA = this.root.querySelector(
+      '.tut-ring[data-ring="a"]'
+    ) as unknown as SVGRectElement;
+    this.ringB = this.root.querySelector(
+      '.tut-ring[data-ring="b"]'
+    ) as unknown as SVGRectElement;
     this.bubble = this.root.querySelector(".tut-bubble") as HTMLDivElement;
     this.textEl = this.bubble.querySelector(".tut-text") as HTMLDivElement;
     this.actionsEl = this.bubble.querySelector(".tut-actions") as HTMLDivElement;
@@ -234,7 +277,7 @@ export class TutorialController implements System {
         screen: "pond",
         nav: [],
         auto: "catch",
-        text: "Drag down anywhere on the pond and release to cast your line. Catch a duck!",
+        text: "Drag down anywhere and release to cast your line. Catch a duck!",
       },
       {
         id: "basket",
@@ -255,12 +298,21 @@ export class TutorialController implements System {
       {
         id: "orders",
         screen: "merge",
-        // Spotlight the specific (pink, level-2) order card, and sit the bubble
-        // to its right so it never covers the merged duck down on the grid.
+        // Spotlight the order card, and sit the bubble to its right so it never
+        // covers the grid below.
         target: () =>
           document.querySelector(
             "#merge-orders .order-card"
           ) as HTMLElement | null,
+        // Also spotlight the merged (level 2) duck the player needs to drag: the
+        // first grid cell that carries a level pip.
+        target2: () => {
+          const cells = document.querySelectorAll("#merge-grid .cell");
+          for (const c of cells) {
+            if (c.querySelector(".lvl")) return c as HTMLElement;
+          }
+          return null;
+        },
         side: true,
         nav: [],
         auto: "fulfill",
@@ -279,8 +331,25 @@ export class TutorialController implements System {
         screen: "pond",
         target: byId("upgrade-toolbar"),
         nav: [],
-        auto: "buyUpgrade",
-        text: "Open the Pole Lab and unlock your first attachment to power up your casts.",
+        auto: "openUpgrades",
+        text: "Open the Pole Lab to unlock a powerful attachment.",
+      },
+      {
+        id: "unlock-automatic",
+        screen: "pond",
+        target: () =>
+          document.querySelector('[data-unlock="automatic"]') as HTMLElement | null,
+        nav: [],
+        auto: "unlockAutomatic",
+        text: "Unlock the Automatic attachment to supercharge your casts.",
+      },
+      {
+        id: "teach-automatic",
+        screen: "pond",
+        dimCenter: true,
+        nav: [],
+        button: "Got it",
+        text: "Nice! Automatic casts your line for you over and over — no dragging needed. Tap it in the ring under your fisher to switch it on for a while; then it needs a moment to cool down before you can use it again.",
       },
       {
         id: "carnival",
@@ -308,6 +377,7 @@ export class TutorialController implements System {
           ) as HTMLElement | null,
         nav: [],
         auto: "upgradeBuilding",
+        button: "Got it",
         text: "Attractions earn hearts over time — even while you're off fishing! Tap your Ring Toss and upgrade it to earn faster.",
       },
       {
@@ -323,8 +393,20 @@ export class TutorialController implements System {
         screen: "carnival",
         target: byId("carnival-events-btn"),
         nav: [],
+        auto: "openEvents",
+        text: "Throw a special event to boost happiness fast. Tap Events to see what's on offer.",
+      },
+      {
+        id: "carnival-buy-event",
+        screen: "carnival",
+        // Highlight the Free Cotton Candy row inside the open events panel.
+        target: () =>
+          document.querySelector(
+            '#carnival-events-panel [data-event="cotton-candy"]'
+          ) as HTMLElement | null,
+        nav: [],
         auto: "buyEvent",
-        text: "Throw a special event to boost happiness fast. Tap Events and buy one — watch the happiness bar jump!",
+        text: "Buy the Free Cotton Candy — watch the happiness bar jump!",
       },
       {
         id: "done",
@@ -355,6 +437,13 @@ export class TutorialController implements System {
     this.start();
   }
 
+  // Clear the "tutorial completed" flag without restarting mid-session. The dev
+  // "Reset All" button calls this and then reloads, so the freshly-constructed
+  // game (all state is in-memory) starts over with the walkthrough from step 0.
+  clearDoneFlag() {
+    localStorage.removeItem(DONE_KEY);
+  }
+
   skip() {
     this.finish();
   }
@@ -371,6 +460,12 @@ export class TutorialController implements System {
   // done (unrestricted); otherwise the current step's whitelist (default none).
   allowedNav(): Screen[] | null {
     return this.active ? this.step.nav ?? [] : null;
+  }
+
+  // Whether the walkthrough is currently running (used to suppress the standalone
+  // attachment-unlock explainer, since the tutorial teaches it itself).
+  isActive(): boolean {
+    return this.active;
   }
 
   private advance() {
@@ -448,10 +543,10 @@ export class TutorialController implements System {
 
   private onUpgradeChange() {
     if (!this.active) return;
-    if (
-      this.step.auto === "buyUpgrade" &&
-      this.upgradeUnlockCount() > this.upgradeBaseline
-    ) {
+    const a = this.step.auto;
+    if (a === "buyUpgrade" && this.upgradeUnlockCount() > this.upgradeBaseline) {
+      this.advance();
+    } else if (a === "unlockAutomatic" && this.upgrades.isUnlocked("automatic")) {
       this.advance();
     }
   }
@@ -512,6 +607,24 @@ export class TutorialController implements System {
 
     const s = this.step;
 
+    // The "open the Pole Lab" step advances the moment its panel appears.
+    if (s.auto === "openUpgrades") {
+      const panel = document.getElementById("upgrade-panel");
+      if (panel && !panel.classList.contains("hidden")) {
+        this.advance();
+        return;
+      }
+    }
+
+    // The "tap Events" step advances the moment the events panel opens.
+    if (s.auto === "openEvents") {
+      const panel = document.getElementById("carnival-events-panel");
+      if (panel && !panel.classList.contains("hidden")) {
+        this.advance();
+        return;
+      }
+    }
+
     // Hide while the player is on a screen this step doesn't belong to.
     if (s.screen && s.screen !== this.screen) {
       this.root.classList.add("hidden");
@@ -520,13 +633,12 @@ export class TutorialController implements System {
     this.root.classList.remove("hidden");
 
     const parentRect = this.root.getBoundingClientRect();
-    const target = s.target?.() ?? null;
-    const targetRect =
-      target && target.offsetParent !== null
-        ? target.getBoundingClientRect()
-        : null;
+    const targetRect = rectOf(s.target?.() ?? null);
+    const target2Rect = rectOf(s.target2?.() ?? null);
 
-    if (targetRect) {
+    if (targetRect && target2Rect) {
+      this.layoutDualSpotlight(parentRect, targetRect, target2Rect);
+    } else if (targetRect) {
       this.layoutSpotlight(parentRect, targetRect, !!s.side);
     } else if (s.dimCenter) {
       this.layoutCentered(parentRect, true);
@@ -538,6 +650,7 @@ export class TutorialController implements System {
   // Spotlight the target and anchor the bubble beside/above/below it.
   private layoutSpotlight(parentRect: DOMRect, r: DOMRect, side: boolean) {
     this.dim.style.display = "none";
+    this.cutout.style.display = "none";
     this.spot.style.display = "block";
 
     const pad = 8;
@@ -597,9 +710,56 @@ export class TutorialController implements System {
     this.arrow.style.left = `${ax - 9}px`;
   }
 
+  // Spotlight two targets at once (order card + merged duck). A single evenodd
+  // path dims everything but the two holes; a stroked rect rings each. The bubble
+  // sits to the right of the primary target (the order card).
+  private layoutDualSpotlight(parentRect: DOMRect, a: DOMRect, b: DOMRect) {
+    this.dim.style.display = "none";
+    this.spot.style.display = "none";
+    this.cutout.style.display = "block";
+
+    const pad = 8;
+    const rad = 14;
+    const ha = padded(parentRect, a, pad);
+    const hb = padded(parentRect, b, pad);
+    const W = parentRect.width;
+    const H = parentRect.height;
+
+    // Outer rect (full overlay) + two rounded holes; evenodd punches the holes.
+    const d =
+      `M0 0 H${W} V${H} H0 Z ` +
+      roundRectPath(ha.x, ha.y, ha.w, ha.h, rad) +
+      " " +
+      roundRectPath(hb.x, hb.y, hb.w, hb.h, rad);
+    this.cutoutFill.setAttribute("d", d);
+
+    setRing(this.ringA, ha, rad);
+    setRing(this.ringB, hb, rad);
+
+    // Bubble beside the primary target (order card), vertically centered.
+    this.bubble.style.display = "block";
+    this.arrow.style.display = "block";
+    const bw = this.bubble.offsetWidth;
+    const bh = this.bubble.offsetHeight;
+    this.bubble.classList.remove("below", "above");
+    this.bubble.classList.add("beside");
+    let bx = ha.x + ha.w + 12;
+    bx = Math.max(8, Math.min(bx, parentRect.width - bw - 8));
+    const targetCenterY = ha.y + ha.h / 2;
+    let by = targetCenterY - bh / 2;
+    by = Math.max(8, Math.min(by, parentRect.height - bh - 8));
+    this.bubble.style.left = `${bx}px`;
+    this.bubble.style.top = `${by}px`;
+    let ay = targetCenterY - by;
+    ay = Math.max(14, Math.min(ay, bh - 14));
+    this.arrow.style.left = "";
+    this.arrow.style.top = `${ay - 9}px`;
+  }
+
   // Centered info card, optionally over a full-screen dim.
   private layoutCentered(parentRect: DOMRect, dim: boolean) {
     this.spot.style.display = "none";
+    this.cutout.style.display = "none";
     this.dim.style.display = dim ? "block" : "none";
     this.arrow.style.display = "none";
 
@@ -623,4 +783,44 @@ export class TutorialController implements System {
       screen: this.screen,
     };
   }
+}
+
+// Viewport rect of a laid-out element, or null if it's not currently rendered.
+function rectOf(el: HTMLElement | null): DOMRect | null {
+  return el && el.offsetParent !== null ? el.getBoundingClientRect() : null;
+}
+
+interface Hole {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// A padded hole for `r`, expressed in the overlay's local coordinate space.
+function padded(parentRect: DOMRect, r: DOMRect, pad: number): Hole {
+  return {
+    x: r.left - parentRect.left - pad,
+    y: r.top - parentRect.top - pad,
+    w: r.width + pad * 2,
+    h: r.height + pad * 2,
+  };
+}
+
+// SVG path subpath for a rounded rectangle.
+function roundRectPath(x: number, y: number, w: number, h: number, r: number): string {
+  r = Math.min(r, w / 2, h / 2);
+  return (
+    `M${x + r} ${y} H${x + w - r} A${r} ${r} 0 0 1 ${x + w} ${y + r} ` +
+    `V${y + h - r} A${r} ${r} 0 0 1 ${x + w - r} ${y + h} H${x + r} ` +
+    `A${r} ${r} 0 0 1 ${x} ${y + h - r} V${y + r} A${r} ${r} 0 0 1 ${x + r} ${y} Z`
+  );
+}
+
+function setRing(ring: SVGRectElement, hole: Hole, rad: number): void {
+  ring.setAttribute("x", String(hole.x));
+  ring.setAttribute("y", String(hole.y));
+  ring.setAttribute("width", String(hole.w));
+  ring.setAttribute("height", String(hole.h));
+  ring.setAttribute("rx", String(Math.min(rad, hole.w / 2, hole.h / 2)));
 }

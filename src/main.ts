@@ -225,6 +225,7 @@ devConsole.innerHTML = `
   <div class="dc-title">DEV</div>
   <button class="dc-btn" id="dev-add-hearts">+100 ${heartSVG()}</button>
   <button class="dc-btn" id="dev-reset-cd">Reset CDs</button>
+  <button class="dc-btn dc-danger" id="dev-reset-all">Reset All</button>
 `;
 container.appendChild(devConsole);
 (devConsole.querySelector("#dev-add-hearts") as HTMLButtonElement).addEventListener(
@@ -237,6 +238,16 @@ container.appendChild(devConsole);
 (devConsole.querySelector("#dev-reset-cd") as HTMLButtonElement).addEventListener(
   "click",
   () => upgradeState.resetCooldowns()
+);
+// Wipe all progress: clear the persisted tutorial flag and reload. Every state
+// model (hearts, grid, upgrades, carnival) is in-memory, so a fresh load starts
+// the game — and the tutorial — over from scratch.
+(devConsole.querySelector("#dev-reset-all") as HTMLButtonElement).addEventListener(
+  "click",
+  () => {
+    tutorial.clearDoneFlag();
+    location.reload();
+  }
 );
 
 // Upper-left toggle so the dev console doesn't permanently block the top of the
@@ -370,6 +381,10 @@ function goPond() {
 // constructor kicks off step 0, and this initial refreshNav applies its gate.)
 tutorial.navRefresh = refreshNav;
 
+// While the walkthrough runs it teaches each attachment itself, so suppress the
+// standalone unlock explainer to avoid a double-explanation.
+upgradeLayer.suppressExplain = () => tutorial.isActive();
+
 // Start on the pond: show Basket + Carnival, hide the Pond button.
 refreshNav();
 
@@ -426,7 +441,7 @@ function injectMergeUiStyles() {
     #nav-cluster {
       position: absolute; z-index: 30;
       top: calc(env(safe-area-inset-top, 12px) + 8px); right: 10px;
-      display: flex; gap: 8px;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
     }
     #nav-cluster button {
       position: relative; padding: 0;
@@ -463,7 +478,7 @@ function injectMergeUiStyles() {
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
     #basket-full-popup .arrow {
-      color: #ffd23f; font-size: 18px; margin-right: 78px; margin-bottom: -2px;
+      color: #ffd23f; font-size: 18px; margin-right: 16px; margin-bottom: -2px;
     }
     /* Orders strip beneath the fisherman on the fishing layer. */
     #fishing-orders {
@@ -539,6 +554,9 @@ function injectDevConsoleStyles() {
     }
     #dev-console .dc-btn:active { transform: translateY(2px); box-shadow: 0 0 0 #b53145; }
     #dev-console .dc-btn svg { width: 15px; height: 15px; }
+    /* Destructive action stands apart from the pink utility buttons. */
+    #dev-console .dc-btn.dc-danger { background: #7a2130; box-shadow: 0 2px 0 #3d0f18; }
+    #dev-console .dc-btn.dc-danger:active { box-shadow: 0 0 0 #3d0f18; }
 
     #dev-toggle {
       position: absolute; z-index: 61;

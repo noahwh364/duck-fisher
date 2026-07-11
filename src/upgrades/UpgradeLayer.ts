@@ -224,6 +224,10 @@ export class UpgradeLayer implements System {
   // once per attachment the moment it becomes unlocked (via any code path).
   private seenUnlocked = new Set<Attachment>();
 
+  // Set by main.ts: when it returns true, the one-time unlock explainer is
+  // suppressed (e.g. while the tutorial is teaching the attachment itself).
+  suppressExplain?: () => boolean;
+
   constructor(
     parent: HTMLElement,
     private state: UpgradeState,
@@ -342,7 +346,7 @@ export class UpgradeLayer implements System {
     for (const a of ATTACHMENTS) {
       if (this.state.isUnlocked(a) && !this.seenUnlocked.has(a)) {
         this.seenUnlocked.add(a);
-        this.showExplain(a);
+        if (!this.suppressExplain?.()) this.showExplain(a);
       }
     }
   }
