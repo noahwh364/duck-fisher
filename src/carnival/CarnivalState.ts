@@ -44,6 +44,8 @@ export class CarnivalState implements System {
   readonly placed: PlacedBuilding[] = [];
   happiness = C.happiness.start;
   capHoldRemaining = 0;
+  // Running count of special events bought (a monotonic tutorial/analytics hook).
+  eventsBought = 0;
 
   private heartAccum = 0;
   private payoutTimer = 0;
@@ -187,6 +189,7 @@ export class CarnivalState implements System {
     if (!ev) return false;
     if (!this.merge.trySpend(ev.cost)) return false;
     this.addHappiness(ev.happiness);
+    this.eventsBought++;
     this.emit();
     return true;
   }

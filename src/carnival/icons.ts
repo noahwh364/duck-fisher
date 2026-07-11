@@ -30,6 +30,27 @@ export function tentSVG(): string {
   </svg>`;
 }
 
+// Rippling pond for the "return to fishing" nav button.
+export function pondSVG(): string {
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
+    width="100%" height="100%">
+    <!-- water disc -->
+    <ellipse cx="50" cy="58" rx="40" ry="30" fill="#2fa4e7"/>
+    <ellipse cx="50" cy="58" rx="40" ry="30" fill="none"
+      stroke="#1c6fb0" stroke-width="3"/>
+    <!-- ripples -->
+    <g fill="none" stroke="#bfe6ff" stroke-width="3" stroke-linecap="round">
+      <path d="M28 62 q10 -8 20 0"/>
+      <path d="M55 68 q9 -7 18 0"/>
+    </g>
+    <!-- little duck bobbing on top -->
+    <ellipse cx="48" cy="46" rx="15" ry="9" fill="#ffd23f"/>
+    <circle cx="61" cy="39" r="7.5" fill="#ffd23f"/>
+    <path d="M68 39 l8 2 l-8 2 z" fill="#ff9f1c"/>
+    <circle cx="62" cy="37" r="1.7" fill="#3a2a00"/>
+  </svg>`;
+}
+
 // Building glyphs, drawn on a rounded square by the caller.
 export function buildingSVG(id: string): string {
   switch (id) {
@@ -37,12 +58,12 @@ export function buildingSVG(id: string): string {
       return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
         width="100%" height="100%">
         <rect x="20" y="78" width="60" height="8" rx="3" fill="#7a3b1d"/>
-        <g fill="none" stroke-width="7">
+        <rect x="47" y="30" width="6" height="50" rx="3" fill="#c98a3a"/>
+        <g class="anim-rings" fill="none" stroke-width="7">
           <circle cx="34" cy="52" r="16" stroke="#ff5d73"/>
           <circle cx="62" cy="46" r="14" stroke="#4ecdc4"/>
           <circle cx="52" cy="66" r="12" stroke="#ffd23f"/>
         </g>
-        <rect x="47" y="30" width="6" height="50" rx="3" fill="#c98a3a"/>
       </svg>`;
     case "food-stand":
       return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
@@ -65,40 +86,54 @@ export function buildingSVG(id: string): string {
         <path d="M50 10 L84 40 L16 40 Z" fill="#ff5d73"/>
         <circle cx="50" cy="10" r="4" fill="#ffd23f"/>
         <rect x="18" y="40" width="64" height="6" fill="#ffd23f"/>
-        <!-- poles -->
-        <g stroke="#c98a3a" stroke-width="5">
-          <path d="M28 46 L28 80"/><path d="M50 46 L50 80"/><path d="M72 46 L72 80"/>
-        </g>
         <rect x="16" y="80" width="68" height="7" rx="3" fill="#4ecdc4"/>
-        <circle cx="28" cy="62" r="6" fill="#a06cd5"/>
-        <circle cx="72" cy="62" r="6" fill="#8ac926"/>
+        <!-- static central axis pole -->
+        <path d="M50 46 L50 80" stroke="#c98a3a" stroke-width="5"/>
+        <!-- two riders orbiting the axis: they sweep across the face and
+             cross in the middle (one in front, one behind) to fake rotation
+             about a vertical axis rather than tumbling over the top. -->
+        <g class="anim-carousel">
+          <g class="carousel-rider-a">
+            <path d="M28 46 L28 80" stroke="#c98a3a" stroke-width="5"/>
+            <circle cx="28" cy="62" r="6" fill="#a06cd5"/>
+          </g>
+          <g class="carousel-rider-b">
+            <path d="M72 46 L72 80" stroke="#c98a3a" stroke-width="5"/>
+            <circle cx="72" cy="62" r="6" fill="#8ac926"/>
+          </g>
+        </g>
       </svg>`;
     case "ferris-wheel":
       return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
         width="100%" height="100%">
-        <circle cx="50" cy="44" r="34" fill="none" stroke="#4ecdc4" stroke-width="5"/>
+        <g class="anim-ferris">
+          <circle cx="50" cy="44" r="34" fill="none" stroke="#4ecdc4" stroke-width="5"/>
+          <g stroke="#4ecdc4" stroke-width="4">
+            <path d="M50 44 L50 10"/><path d="M50 44 L50 78"/>
+            <path d="M50 44 L16 44"/><path d="M50 44 L84 44"/>
+            <path d="M50 44 L26 20"/><path d="M50 44 L74 68"/>
+            <path d="M50 44 L74 20"/><path d="M50 44 L26 68"/>
+          </g>
+          <g fill="#ff5d73">
+            <circle cx="50" cy="10" r="5"/><circle cx="50" cy="78" r="5"/>
+            <circle cx="16" cy="44" r="5"/><circle cx="84" cy="44" r="5"/>
+          </g>
+        </g>
         <circle cx="50" cy="44" r="6" fill="#ffd23f"/>
-        <g stroke="#4ecdc4" stroke-width="4">
-          <path d="M50 44 L50 10"/><path d="M50 44 L50 78"/>
-          <path d="M50 44 L16 44"/><path d="M50 44 L84 44"/>
-          <path d="M50 44 L26 20"/><path d="M50 44 L74 68"/>
-          <path d="M50 44 L74 20"/><path d="M50 44 L26 68"/>
-        </g>
-        <g fill="#ff5d73">
-          <circle cx="50" cy="10" r="5"/><circle cx="50" cy="78" r="5"/>
-          <circle cx="16" cy="44" r="5"/><circle cx="84" cy="44" r="5"/>
-        </g>
         <path d="M38 78 L50 50 L62 78 Z" fill="#7a3b1d"/>
       </svg>`;
     case "porta-potty":
       return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
         width="100%" height="100%">
-        <rect x="28" y="18" width="44" height="68" rx="4" fill="#4ea1d3"/>
+        <rect x="28" y="18" width="44" height="68" rx="4" fill="#25566f"/>
         <rect x="30" y="20" width="40" height="10" rx="2" fill="#3a7fae"/>
-        <rect x="34" y="34" width="32" height="46" rx="3" fill="#5fb4e6"/>
-        <circle cx="62" cy="58" r="2.5" fill="#2c5c7a"/>
-        <rect x="40" y="40" width="20" height="12" rx="2" fill="#eaf6ff"/>
-        <circle cx="50" cy="46" r="3" fill="#4ea1d3"/>
+        <!-- swinging door -->
+        <g class="anim-door">
+          <rect x="34" y="34" width="32" height="46" rx="3" fill="#5fb4e6"/>
+          <circle cx="62" cy="58" r="2.5" fill="#2c5c7a"/>
+          <rect x="40" y="40" width="20" height="12" rx="2" fill="#eaf6ff"/>
+          <circle cx="50" cy="46" r="3" fill="#4ea1d3"/>
+        </g>
       </svg>`;
     default:
       return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"

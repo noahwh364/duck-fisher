@@ -156,10 +156,58 @@ const CSS = `
 }
 .trk-row .pip.on { background: #7cf0b5; }
 .trk-row .up-btn.buy { padding: 7px 10px; font-size: 12px; flex: 0 0 auto; }
+
+/* One-time explanation popup shown when an attachment is unlocked. Sits above
+   the skill-tree panel and even the tutorial overlay so it's always readable. */
+#upgrade-explain {
+  position: absolute; inset: 0; z-index: 55;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6,10,22,0.7); padding: 24px;
+  font-family: system-ui, -apple-system, sans-serif; color: #fff;
+}
+#upgrade-explain.hidden { display: none; }
+#upgrade-explain .xbox {
+  width: 100%; max-width: 320px; text-align: center;
+  background: linear-gradient(180deg, #2f5a45, #1e3a2c);
+  border: 3px solid #7cf0b5; border-radius: 18px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.55);
+  padding: 20px 20px 18px;
+}
+#upgrade-explain .xglyph {
+  width: 66px; height: 66px; margin: 0 auto 10px;
+  border-radius: 16px; background: rgba(255,255,255,0.1);
+  display: flex; align-items: center; justify-content: center;
+}
+#upgrade-explain .xglyph svg { width: 46px; height: 46px; }
+#upgrade-explain .xtag {
+  display: inline-block; font-size: 10px; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: #08341f; background: #7cf0b5;
+  border-radius: 999px; padding: 2px 10px; margin-bottom: 8px;
+}
+#upgrade-explain h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+#upgrade-explain p { font-size: 13px; line-height: 1.5; opacity: 0.92; margin-bottom: 10px; }
+#upgrade-explain .xhint { font-size: 11px; opacity: 0.68; margin-bottom: 14px; }
+#upgrade-explain .xbtn {
+  border: none; cursor: pointer; border-radius: 12px;
+  background: #ffd23f; color: #3a2a00; font-weight: 800; font-size: 15px;
+  padding: 11px 26px; box-shadow: 0 3px 0 #c99700; font-family: inherit;
+}
+#upgrade-explain .xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #c99700; }
 `;
 
 // Tracks whose displayed value reads better in seconds (with a clock glyph).
 const TIME_TRACKS = new Set(["duration", "cooldown"]);
+
+// One-time "how it works" blurb shown the moment an attachment is unlocked.
+const ATTACH_EXPLAIN: Record<Attachment, string> = {
+  automatic:
+    "Activate it and your line casts itself over and over for a few seconds — no dragging needed. Perfect for hauling in ducks fast. Upgrade its fire rate, reach, and duration.",
+  blast:
+    "Activate it and every cast fires several lines at once in a wide spread, hooking a whole cluster of ducks in one throw. Upgrade the number of casts, reach, and duration.",
+  laser:
+    "Activate it and your cast becomes a wide beam that scoops up every duck in its path. Upgrade the beam's width and duration.",
+};
 
 export class UpgradeLayer implements System {
   private toolbar: HTMLButtonElement;
@@ -167,9 +215,14 @@ export class UpgradeLayer implements System {
   private panel: HTMLDivElement;
   private panelScroll!: HTMLDivElement;
   private heartsEl!: HTMLSpanElement;
+  private explain!: HTMLDivElement;
 
   // Per-attachment activation-bar button elements, for cheap per-frame updates.
   private barBtns: Partial<Record<Attachment, HTMLButtonElement>> = {};
+
+  // Attachments already introduced, so the "how it works" popup fires exactly
+  // once per attachment the moment it becomes unlocked (via any code path).
+  private seenUnlocked = new Set<Attachment>();
 
   constructor(
     parent: HTMLElement,
@@ -251,9 +304,61 @@ export class UpgradeLayer implements System {
       this.state.activate(btn.dataset.att as Attachment);
     });
 
-    this.state.onChange(() => this.render());
+    // Unlock-explanation popup.
+    this.explain = document.createElement("div");
+    this.explain.id = "upgrade-explain";
+    this.explain.className = "hidden";
+    this.explain.innerHTML = `
+      <div class="xbox">
+        <div class="xglyph"></div>
+        <div class="xtag">New Attachment</div>
+        <h3 class="xtitle"></h3>
+        <p class="xblurb"></p>
+        <div class="xhint">Tap it in the ring of buttons under your fisher to switch it on. It runs for a while, then cools down before you can use it again.</div>
+        <button class="xbtn">Got it</button>
+      </div>`;
+    parent.appendChild(this.explain);
+    // Don't let a tap fall through to the canvas and start a cast.
+    this.explain.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.explain.addEventListener("click", (e) => {
+      const t = e.target as HTMLElement;
+      if (t === this.explain || t.closest(".xbtn")) this.hideExplain();
+    });
+
+    // Seed the "seen" set with anything already unlocked so only *future*
+    // unlocks trigger the popup (nothing fires on initial load).
+    for (const a of ATTACHMENTS) if (this.state.isUnlocked(a)) this.seenUnlocked.add(a);
+
+    this.state.onChange(() => {
+      this.render();
+      this.checkNewUnlocks();
+    });
     this.merge.onChange(() => this.render());
     this.render();
+  }
+
+  // Show the one-time blurb for any attachment that just became unlocked.
+  private checkNewUnlocks() {
+    for (const a of ATTACHMENTS) {
+      if (this.state.isUnlocked(a) && !this.seenUnlocked.has(a)) {
+        this.seenUnlocked.add(a);
+        this.showExplain(a);
+      }
+    }
+  }
+
+  private showExplain(att: Attachment) {
+    (this.explain.querySelector(".xglyph") as HTMLElement).innerHTML =
+      attachmentSVG(att);
+    (this.explain.querySelector(".xtitle") as HTMLElement).textContent =
+      ATTACH_LABEL[att];
+    (this.explain.querySelector(".xblurb") as HTMLElement).textContent =
+      ATTACH_EXPLAIN[att];
+    this.explain.classList.remove("hidden");
+  }
+
+  private hideExplain() {
+    this.explain.classList.add("hidden");
   }
 
   // ---- Show/hide (the merge layer covers everything; hide while it's open) ----
@@ -261,6 +366,7 @@ export class UpgradeLayer implements System {
     this.toolbar.style.display = "none";
     this.bar.style.display = "none";
     this.closePanel();
+    this.hideExplain();
   }
   show() {
     this.toolbar.style.display = "flex";

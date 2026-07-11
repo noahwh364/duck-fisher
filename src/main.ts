@@ -27,7 +27,8 @@ import { UpgradeState, ATTACHMENTS, TRACKS } from "./upgrades/UpgradeState";
 import { UpgradeLayer } from "./upgrades/UpgradeLayer";
 import { CarnivalState } from "./carnival/CarnivalState";
 import { CarnivalLayer } from "./carnival/CarnivalLayer";
-import { tentSVG } from "./carnival/icons";
+import { tentSVG, pondSVG } from "./carnival/icons";
+import { TutorialController } from "./tutorial/TutorialController";
 
 const container = document.getElementById("game") as HTMLDivElement;
 
@@ -119,7 +120,7 @@ scene.add(basket.group);
 // ---- Merge layer (second screen) ----
 const mergeState = new MergeState();
 
-const mergeLayer = new MergeLayer(container, mergeState, () => closeMerge());
+const mergeLayer = new MergeLayer(container, mergeState);
 
 // ---- Pole upgrades (test-tube skill tree) ----
 const upgradeState = new UpgradeState(mergeState);
@@ -130,35 +131,60 @@ addSystem(upgradeLayer);
 // ---- Carnival building layer (passive-heart economy) ----
 const carnivalState = new CarnivalState(mergeState);
 addSystem(carnivalState);
-const carnivalLayer = new CarnivalLayer(
-  container,
-  carnivalState,
-  mergeState,
-  () => closeCarnival()
-);
+const carnivalLayer = new CarnivalLayer(container, carnivalState, mergeState);
 addSystem(carnivalLayer);
 
-// Bottom-right basket button that opens the merge layer (with a live count).
+// ---- Interactive first-play tutorial (overlay on top of everything) ----
+const tutorial = new TutorialController(
+  container,
+  mergeState,
+  upgradeState,
+  carnivalState
+);
+addSystem(tutorial);
+
+// Persistent cross-layer navigation cluster, pinned to the upper-right corner on
+// every screen. It shows the two buttons that jump to the layers you're NOT on:
+// pond -> Basket + Carnival; merge -> Pond + Carnival; carnival -> Pond + Basket.
+const navCluster = document.createElement("div");
+navCluster.id = "nav-cluster";
+container.appendChild(navCluster);
+
+// Pond (return to fishing). Hidden while already on the pond.
+const pondBtn = document.createElement("button");
+pondBtn.id = "pond-btn";
+pondBtn.title = "Pond";
+pondBtn.innerHTML = `<span class="nico">${pondSVG()}</span>`;
+navCluster.appendChild(pondBtn);
+pondBtn.addEventListener("click", () => goPond());
+
+// Basket (opens the merge layer) with a live catch count.
 const basketBtn = document.createElement("button");
 basketBtn.id = "basket-btn";
+basketBtn.title = "Basket";
 basketBtn.innerHTML = `
-  <span class="bico">${buildDuckSVG(0, 1)}</span>
+  <span class="nico">${buildDuckSVG(0, 1)}</span>
   <span id="basket-count" class="bcount">0</span>
 `;
-container.appendChild(basketBtn);
+navCluster.appendChild(basketBtn);
 basketBtn.addEventListener("click", () => openMerge());
 
-// Carnival tent button, stacked directly above the basket button (bottom-right).
+// Carnival tent.
 const carnivalBtn = document.createElement("button");
 carnivalBtn.id = "carnival-btn";
-carnivalBtn.innerHTML = `<span class="cico">${tentSVG()}</span>`;
-container.appendChild(carnivalBtn);
+carnivalBtn.title = "Carnival";
+carnivalBtn.innerHTML = `<span class="nico">${tentSVG()}</span>`;
+navCluster.appendChild(carnivalBtn);
 carnivalBtn.addEventListener("click", () => openCarnival());
+
+// Taps on the nav buttons must never reach the pond canvas and start a cast.
+for (const b of [pondBtn, basketBtn, carnivalBtn])
+  b.addEventListener("pointerdown", (e) => e.stopPropagation());
 
 // "Basket full!" popup shown on the fishing layer when the grid fills up.
 const fullPopup = document.createElement("div");
 fullPopup.id = "basket-full-popup";
-fullPopup.innerHTML = `<div class="bubble">Basket full!<br/>Merge to continue</div><div class="arrow">▼</div>`;
+fullPopup.innerHTML = `<div class="arrow">▲</div><div class="bubble">Basket full!<br/>Merge to continue</div>`;
 fullPopup.style.display = "none";
 container.appendChild(fullPopup);
 
@@ -212,6 +238,23 @@ container.appendChild(devConsole);
   "click",
   () => upgradeState.resetCooldowns()
 );
+
+// Upper-left toggle so the dev console doesn't permanently block the top of the
+// screen. Stays put across every screen (sits above all layers). Console starts
+// hidden; the button shows/hides it.
+devConsole.style.display = "none";
+const devToggle = document.createElement("button");
+devToggle.id = "dev-toggle";
+devToggle.title = "Toggle dev console";
+devToggle.textContent = "DEV";
+container.appendChild(devToggle);
+devToggle.addEventListener("pointerdown", (e) => e.stopPropagation());
+devToggle.addEventListener("click", () => {
+  const show = devConsole.style.display === "none";
+  devConsole.style.display = show ? "flex" : "none";
+  devToggle.classList.toggle("on", show);
+});
+
 injectDevConsoleStyles();
 
 function updateBasketBadge() {
@@ -247,35 +290,88 @@ function mergeSnapshot() {
   };
 }
 
-function openMerge() {
-  mergeLayer.open();
-  basketBtn.style.display = "none";
-  carnivalBtn.style.display = "none";
-  fullPopup.style.display = "none";
-  upgradeLayer.hide();
-}
-function closeMerge() {
-  mergeLayer.close();
-  basketBtn.style.display = "flex";
-  carnivalBtn.style.display = "flex";
-  upgradeLayer.show();
+// The three screens share one persistent nav cluster; each transition closes the
+// layer we're leaving, opens the one we're entering, and updates which two nav
+// buttons show (you never see a button to the screen you're already on).
+type Screen = "pond" | "merge" | "carnival";
+let currentScreen: Screen = "pond";
+
+function refreshNav() {
+  // During the tutorial, each step whitelists which screens the player may jump
+  // to (allowedNav returns null once the tutorial is done -> unrestricted). This
+  // keeps the walkthrough linear: e.g. the tent stays hidden until the upgrade
+  // step is actually completed, so buying an upgrade can't be skipped.
+  const allow = tutorial.allowedNav();
+  const ok = (s: Screen) => allow === null || allow.includes(s);
+  pondBtn.style.display =
+    currentScreen !== "pond" && ok("pond") ? "flex" : "none";
+  basketBtn.style.display =
+    currentScreen !== "merge" && ok("merge") ? "flex" : "none";
+  carnivalBtn.style.display =
+    currentScreen !== "carnival" && ok("carnival") ? "flex" : "none";
 }
 
-function openCarnival() {
-  carnivalLayer.open();
-  basketBtn.style.display = "none";
-  carnivalBtn.style.display = "none";
+function openMerge() {
+  if (currentScreen === "merge") return;
+  if (currentScreen === "carnival") {
+    carnivalLayer.close();
+    tutorial.notifyCloseCarnival();
+  }
+  mergeLayer.open();
+  currentScreen = "merge";
   fullPopup.style.display = "none";
   fishingOrders.style.display = "none";
   upgradeLayer.hide();
+  refreshNav();
+  tutorial.notifyOpenMerge();
 }
-function closeCarnival() {
-  carnivalLayer.close();
-  basketBtn.style.display = "flex";
-  carnivalBtn.style.display = "flex";
+function closeMerge() {
+  if (currentScreen !== "merge") return;
+  mergeLayer.close();
+  currentScreen = "pond";
   fishingOrders.style.display = "";
   upgradeLayer.show();
+  refreshNav();
+  tutorial.notifyCloseMerge();
 }
+
+function openCarnival() {
+  if (currentScreen === "carnival") return;
+  if (currentScreen === "merge") {
+    mergeLayer.close();
+    tutorial.notifyCloseMerge();
+  }
+  carnivalLayer.open();
+  currentScreen = "carnival";
+  fullPopup.style.display = "none";
+  fishingOrders.style.display = "none";
+  upgradeLayer.hide();
+  refreshNav();
+  tutorial.notifyOpenCarnival();
+}
+function closeCarnival() {
+  if (currentScreen !== "carnival") return;
+  carnivalLayer.close();
+  currentScreen = "pond";
+  fishingOrders.style.display = "";
+  upgradeLayer.show();
+  refreshNav();
+  tutorial.notifyCloseCarnival();
+}
+
+// The pond nav button: return to fishing from whichever layer is open.
+function goPond() {
+  if (currentScreen === "merge") closeMerge();
+  else if (currentScreen === "carnival") closeCarnival();
+}
+
+// Let the tutorial re-apply its per-step nav gate whenever it changes steps.
+// (Wired here, after refreshNav + the nav buttons exist; the controller's own
+// constructor kicks off step 0, and this initial refreshNav applies its gate.)
+tutorial.navRefresh = refreshNav;
+
+// Start on the pond: show Basket + Carnival, hide the Pond button.
+refreshNav();
 
 // A caught duck lands in the basket -> place it on the merge grid. Returns
 // whether it was accepted; if not (grid + storage both full) the cast controller
@@ -286,6 +382,7 @@ function onCollect(colorIndex: number): boolean {
   if (!ok && !mergeLayer.isOpen) {
     fullPopup.style.display = "block";
   }
+  tutorial.notifyCatch();
   return ok;
 }
 
@@ -315,6 +412,7 @@ export {
   upgradeState,
   carnivalState,
   carnivalLayer,
+  tutorial,
 };
 
 // CSS for the fishing-layer basket button + basket-full popup.
@@ -323,40 +421,37 @@ function injectMergeUiStyles() {
   const st = document.createElement("style");
   st.id = "merge-ui-style";
   st.textContent = `
-    #basket-btn {
-      position: absolute; z-index: 15;
-      right: 14px; bottom: calc(env(safe-area-inset-bottom, 12px) + 14px);
-      width: 64px; height: 64px; border-radius: 18px;
+    /* Persistent cross-layer nav cluster, upper-right on every screen. Sits above
+       the layers (z 20) but below the tutorial (z 50) and dev console. */
+    #nav-cluster {
+      position: absolute; z-index: 30;
+      top: calc(env(safe-area-inset-top, 12px) + 8px); right: 10px;
+      display: flex; gap: 8px;
+    }
+    #nav-cluster button {
+      position: relative; padding: 0;
+      width: 52px; height: 52px; border-radius: 15px;
       border: 3px solid #ffd23f; cursor: pointer;
       background: rgba(20,30,55,0.82);
       display: flex; align-items: center; justify-content: center;
       box-shadow: 0 4px 10px rgba(0,0,0,0.45);
     }
-    #basket-btn:active { transform: translateY(2px); }
-    #basket-btn .bico { width: 42px; height: 42px; pointer-events: none; }
-    /* Carnival tent button, stacked directly above the basket button. */
-    #carnival-btn {
-      position: absolute; z-index: 15;
-      right: 14px; bottom: calc(env(safe-area-inset-bottom, 12px) + 14px + 64px + 10px);
-      width: 64px; height: 64px; border-radius: 18px;
-      border: 3px solid #ff8fa3; cursor: pointer;
-      background: rgba(20,30,55,0.82);
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.45);
-    }
-    #carnival-btn:active { transform: translateY(2px); }
-    #carnival-btn .cico { width: 46px; height: 46px; pointer-events: none; }
+    #nav-cluster button:active { transform: translateY(2px); }
+    #nav-cluster .nico { width: 40px; height: 40px; pointer-events: none; display: block; }
+    #pond-btn { border-color: #4ecdc4; }
+    #carnival-btn { border-color: #ff8fa3; }
     #basket-btn .bcount {
       position: absolute; top: -8px; right: -8px;
-      min-width: 22px; height: 22px; padding: 0 5px;
-      background: #ff4d6d; color: #fff; font-weight: 800; font-size: 13px;
+      min-width: 20px; height: 20px; padding: 0 5px;
+      background: #ff4d6d; color: #fff; font-weight: 800; font-size: 12px;
       border-radius: 999px; border: 2px solid #14213d;
       display: flex; align-items: center; justify-content: center;
       font-family: system-ui, -apple-system, sans-serif;
     }
+    /* "Basket full!" hint drops down from under the relocated basket button. */
     #basket-full-popup {
       position: absolute; z-index: 16;
-      right: 12px; bottom: calc(env(safe-area-inset-bottom, 12px) + 84px);
+      right: 12px; top: calc(env(safe-area-inset-top, 12px) + 8px + 52px + 2px);
       display: flex; flex-direction: column; align-items: flex-end;
       font-family: system-ui, -apple-system, sans-serif;
       pointer-events: none;
@@ -368,12 +463,12 @@ function injectMergeUiStyles() {
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
     #basket-full-popup .arrow {
-      color: #ffd23f; font-size: 18px; margin-right: 22px; margin-top: -2px;
+      color: #ffd23f; font-size: 18px; margin-right: 78px; margin-bottom: -2px;
     }
     /* Orders strip beneath the fisherman on the fishing layer. */
     #fishing-orders {
       position: absolute; z-index: 12;
-      left: 8px; right: 88px;
+      left: 8px; right: 8px;
       bottom: calc(env(safe-area-inset-bottom, 12px) + 12px);
       pointer-events: none;
       font-family: system-ui, -apple-system, sans-serif;
@@ -444,6 +539,19 @@ function injectDevConsoleStyles() {
     }
     #dev-console .dc-btn:active { transform: translateY(2px); box-shadow: 0 0 0 #b53145; }
     #dev-console .dc-btn svg { width: 15px; height: 15px; }
+
+    #dev-toggle {
+      position: absolute; z-index: 61;
+      top: calc(env(safe-area-inset-top, 8px) + 8px); left: 8px;
+      border: 2px solid #ff5d73; cursor: pointer;
+      background: rgba(8,12,24,0.82); color: #ff5d73;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-weight: 800; font-size: 11px; letter-spacing: 0.1em;
+      border-radius: 10px; padding: 6px 9px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.45);
+    }
+    #dev-toggle:active { transform: translateY(2px); }
+    #dev-toggle.on { background: #ff5d73; color: #fff; }
   `;
   document.head.appendChild(st);
 }
@@ -635,6 +743,18 @@ requestAnimationFrame(frame);
   carnivalSetHappiness(n: number) {
     carnivalState.setHappiness(n);
     return carnivalState.snapshot();
+  },
+  // ---- Tutorial debug helpers ----
+  get tutorial() {
+    return tutorial.snapshot();
+  },
+  tutorialReset() {
+    tutorial.reset();
+    return tutorial.snapshot();
+  },
+  tutorialSkip() {
+    tutorial.skip();
+    return tutorial.snapshot();
   },
 };
 

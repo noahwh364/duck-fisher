@@ -204,7 +204,10 @@ export const CONFIG = {
     basketOffset: [-2.4, 0, 0.2] as [number, number, number],
     handHeight: 1.15,
     restPoleAngle: -0.5, // radians, pole tilted up toward the pool at rest
-    pullbackPoleAngle: 1.1, // pole yanked back over the shoulder while aiming
+    // More negative = rod swings further up and back over the shoulder. Must stay
+    // negative so pulling rears the rod backward rather than dipping it forward
+    // into the pond.
+    pullbackPoleAngle: -1.8, // pole reared back over the shoulder while aiming
     color: "#e8b98a",
     shirt: "#d64550",
     pants: "#2f4b7c",

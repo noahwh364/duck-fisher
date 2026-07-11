@@ -237,4 +237,19 @@ export class MergeState {
     this.cells[index] = { id: this.nextItemId++, colorIndex, level };
     this.emit();
   }
+
+  // Tutorial/testing helper: force order `index` to request a specific duck
+  // (keeps the existing customer face). Used to prepopulate a known order.
+  setOrder(index: number, colorIndex: number, level: number) {
+    const cur = this.orders[index];
+    if (!cur) return;
+    this.orders[index] = {
+      id: this.nextOrderId++,
+      colorIndex,
+      level,
+      npc: cur.npc,
+      reward: level * 5,
+    };
+    this.emit();
+  }
 }

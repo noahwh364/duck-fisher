@@ -23,6 +23,7 @@ interface Npc {
   speed: number;
   inside: number; // seconds remaining "inside" a building (hidden)
   targetIsBuilding: boolean;
+  targetInstanceId: number; // which placed building this NPC is heading into (-1 = none)
   variant: number;
 }
 
@@ -39,14 +40,9 @@ const CSS = `
 
 #carnival-top {
   display: flex; align-items: center; gap: 8px;
-  padding: calc(env(safe-area-inset-top, 8px) + 8px) 12px 8px;
+  /* Right padding leaves room for the persistent upper-right nav cluster. */
+  padding: calc(env(safe-area-inset-top, 8px) + 8px) 130px 8px 12px;
 }
-#carnival-back {
-  border: none; cursor: pointer; flex: 0 0 auto;
-  background: #ffd23f; color: #3a2a00; font-weight: 800; font-size: 15px;
-  border-radius: 999px; padding: 8px 14px; box-shadow: 0 3px 0 #c99700;
-}
-#carnival-back:active { transform: translateY(2px); box-shadow: 0 1px 0 #c99700; }
 #carnival-hearts {
   display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
   background: rgba(0,0,0,0.28); border-radius: 999px;
@@ -194,6 +190,98 @@ const CSS = `
   opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s;
 }
 #carnival-toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+/* ---- Per-building animations, played when an NPC enters ---- */
+/* Animatable SVG sub-parts transform in viewBox (0..100) space. */
+.anim-ferris   { transform-box: view-box; transform-origin: 50px 44px; }
+.anim-door     { transform-box: view-box; transform-origin: 34px 57px; }
+.anim-rings > circle { transform-box: fill-box; transform-origin: center; }
+.carousel-rider-a { transform-box: view-box; transform-origin: 28px 62px; }
+.carousel-rider-b { transform-box: view-box; transform-origin: 72px 62px; }
+
+/* Let a tossed ring soar above the booth instead of being clipped by the
+   SVG viewport (only while the building's toss animation is playing). */
+.cbuild.anim .glyph svg { overflow: visible; }
+
+.cbuild.anim .carousel-rider-a { animation: carousel-a 1.3s ease-in-out; }
+.cbuild.anim .carousel-rider-b { animation: carousel-b 1.3s ease-in-out; }
+.cbuild.anim .anim-ferris   { animation: ferris-spin 2.6s linear; }
+.cbuild.anim .anim-door     { animation: door-swing 1.4s ease-in-out; }
+/* Toss the three rings up one after another; each arcs up and lands in place. */
+.cbuild.anim .anim-rings > circle { animation: ring-toss 0.9s linear both; }
+.cbuild.anim .anim-rings > circle:nth-child(1) { animation-delay: 0s; }
+.cbuild.anim .anim-rings > circle:nth-child(2) { animation-delay: 0.12s; }
+.cbuild.anim .anim-rings > circle:nth-child(3) { animation-delay: 0.24s; }
+
+@keyframes ferris-spin   { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* Rider orbit: horizontal sweep (translateX) fakes going around the axis;
+   scale + opacity fake depth (small/faint at the back, big/solid at front).
+   Rider B runs the same path 180deg out of phase (mirror). */
+@keyframes carousel-a {
+  0%    { transform: translateX(0px)    scale(0.85); opacity: 0.78; }
+  12.5% { transform: translateX(6.4px)  scale(0.67); opacity: 0.62; }
+  25%   { transform: translateX(22px)   scale(0.60); opacity: 0.56; }
+  37.5% { transform: translateX(37.6px) scale(0.67); opacity: 0.62; }
+  50%   { transform: translateX(44px)   scale(0.85); opacity: 0.78; }
+  62.5% { transform: translateX(37.6px) scale(1.03); opacity: 0.94; }
+  75%   { transform: translateX(22px)   scale(1.10); opacity: 1;    }
+  87.5% { transform: translateX(6.4px)  scale(1.03); opacity: 0.94; }
+  100%  { transform: translateX(0px)    scale(0.85); opacity: 0.78; }
+}
+@keyframes carousel-b {
+  0%    { transform: translateX(0px)     scale(0.85); opacity: 0.78; }
+  12.5% { transform: translateX(-6.4px)  scale(1.03); opacity: 0.94; }
+  25%   { transform: translateX(-22px)   scale(1.10); opacity: 1;    }
+  37.5% { transform: translateX(-37.6px) scale(1.03); opacity: 0.94; }
+  50%   { transform: translateX(-44px)   scale(0.85); opacity: 0.78; }
+  62.5% { transform: translateX(-37.6px) scale(0.67); opacity: 0.62; }
+  75%   { transform: translateX(-22px)   scale(0.60); opacity: 0.56; }
+  87.5% { transform: translateX(-6.4px)  scale(0.67); opacity: 0.62; }
+  100%  { transform: translateX(0px)     scale(0.85); opacity: 0.78; }
+}
+@keyframes door-swing {
+  0%   { transform: scaleX(1); }
+  30%  { transform: scaleX(0.08); }
+  70%  { transform: scaleX(0.08); }
+  100% { transform: scaleX(1); }
+}
+/* Parabolic toss (linear timing over a gravity arc) with a full spin; the ring
+   leaves the peg, sails up, and drops back exactly where it started. */
+@keyframes ring-toss {
+  0%   { transform: translateY(0)      rotate(0deg); }
+  10%  { transform: translateY(-17.3px) rotate(36deg); }
+  20%  { transform: translateY(-30.7px) rotate(72deg); }
+  30%  { transform: translateY(-40.3px) rotate(108deg); }
+  40%  { transform: translateY(-46.1px) rotate(144deg); }
+  50%  { transform: translateY(-48px)   rotate(180deg); }
+  60%  { transform: translateY(-46.1px) rotate(216deg); }
+  70%  { transform: translateY(-40.3px) rotate(252deg); }
+  80%  { transform: translateY(-30.7px) rotate(288deg); }
+  90%  { transform: translateY(-17.3px) rotate(324deg); }
+  100% { transform: translateY(0)      rotate(360deg); }
+}
+
+/* Food-stand "Yum!" speech bubble. */
+.cbuild .yum {
+  position: absolute; left: 50%; top: 2px;
+  background: #fff; color: #d23a52; font-weight: 900; font-size: 12px;
+  padding: 3px 8px; border-radius: 10px; white-space: nowrap;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.35); pointer-events: none;
+  animation: yum-pop 1.5s ease-out forwards;
+}
+.cbuild .yum::after {
+  content: ""; position: absolute; left: 50%; bottom: -4px;
+  transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: #fff; border-bottom: 0;
+}
+@keyframes yum-pop {
+  0%   { opacity: 0; transform: translate(-50%, -60%) scale(0.6); }
+  15%  { opacity: 1; transform: translate(-50%, -100%) scale(1.12); }
+  32%  { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  80%  { opacity: 1; transform: translate(-50%, -125%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -145%) scale(0.95); }
+}
 `;
 
 export class CarnivalLayer implements System {
@@ -211,6 +299,10 @@ export class CarnivalLayer implements System {
   private ghost!: HTMLDivElement;
   private toastTimer: number | undefined;
 
+  // Signature of the last field render; lets us skip rebuilding the building
+  // DOM on happiness-only emits (which would otherwise interrupt animations).
+  private lastFieldSig = "";
+
   private npcs: Npc[] = [];
 
   // Active drag (from menu = place; from a placed building = move).
@@ -225,8 +317,7 @@ export class CarnivalLayer implements System {
   constructor(
     parent: HTMLElement,
     private state: CarnivalState,
-    private merge: MergeState,
-    private onBack: () => void
+    private merge: MergeState
   ) {
     if (!document.getElementById(STYLE_ID)) {
       const st = document.createElement("style");
@@ -239,7 +330,6 @@ export class CarnivalLayer implements System {
     this.root.id = "carnival-layer";
     this.root.innerHTML = `
       <div id="carnival-top">
-        <button id="carnival-back">← Pond</button>
         <div id="carnival-hearts">
           <span class="ico">${heartSVG()}</span>
           <span id="carnival-hearts-count">0</span>
@@ -289,11 +379,6 @@ export class CarnivalLayer implements System {
     this.ghost = document.createElement("div");
     this.ghost.id = "carnival-ghost";
     parent.appendChild(this.ghost);
-
-    (this.root.querySelector("#carnival-back") as HTMLButtonElement).addEventListener(
-      "click",
-      () => this.onBack()
-    );
 
     // Events button + panel.
     (this.root.querySelector("#carnival-events-btn") as HTMLButtonElement).addEventListener(
@@ -371,6 +456,14 @@ export class CarnivalLayer implements System {
   }
 
   private renderField() {
+    // Skip when the placed set/levels/positions are unchanged, so frequent
+    // happiness emits don't tear down and rebuild in-flight animations.
+    const sig = this.state.placed
+      .map((pb) => `${pb.instanceId}:${pb.defId}:${pb.level}:${pb.x.toFixed(4)}:${pb.y.toFixed(4)}`)
+      .join("|");
+    if (sig === this.lastFieldSig) return;
+    this.lastFieldSig = sig;
+
     this.buildingsEl.innerHTML = this.state.placed
       .map((pb) => {
         const lvl =
@@ -630,6 +723,7 @@ export class CarnivalLayer implements System {
       speed: 0.05 + Math.random() * 0.06,
       inside: 0,
       targetIsBuilding: false,
+      targetInstanceId: -1,
       variant,
     };
     this.assignTarget(npc);
@@ -644,10 +738,12 @@ export class CarnivalLayer implements System {
       npc.tx = b.x;
       npc.ty = b.y;
       npc.targetIsBuilding = true;
+      npc.targetInstanceId = b.instanceId;
     } else {
       npc.tx = 0.05 + Math.random() * 0.9;
       npc.ty = 0.3 + Math.random() * 0.65;
       npc.targetIsBuilding = false;
+      npc.targetInstanceId = -1;
     }
   }
 
@@ -671,6 +767,7 @@ export class CarnivalLayer implements System {
         if (npc.targetIsBuilding) {
           npc.inside = 1 + Math.random() * 1.5; // duck inside
           npc.el.style.opacity = "0.15";
+          this.playBuildingAnim(npc.targetInstanceId); // the building reacts
         } else {
           this.assignTarget(npc);
         }
@@ -685,6 +782,32 @@ export class CarnivalLayer implements System {
   private positionNpc(npc: Npc) {
     npc.el.style.left = npc.x * 100 + "%";
     npc.el.style.top = npc.y * 100 + "%";
+  }
+
+  // Play the entry reaction for a placed building. Food stands pop a "Yum!"
+  // bubble; every other type restarts its CSS animation (spin / rotate / door).
+  private playBuildingAnim(instanceId: number) {
+    const el = this.buildingsEl.querySelector(
+      `.cbuild[data-instance="${instanceId}"]`
+    ) as HTMLElement | null;
+    if (!el) return;
+    const pb = this.state.byInstance(instanceId);
+    if (!pb) return;
+
+    if (pb.defId === "food-stand") {
+      el.querySelector(".yum")?.remove();
+      const bubble = document.createElement("div");
+      bubble.className = "yum";
+      bubble.textContent = "Yum!";
+      bubble.addEventListener("animationend", () => bubble.remove());
+      el.appendChild(bubble);
+      return;
+    }
+
+    // Restart the animation: drop the class, force reflow, re-add.
+    el.classList.remove("anim");
+    void el.offsetWidth;
+    el.classList.add("anim");
   }
 }
 

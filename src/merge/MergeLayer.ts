@@ -23,8 +23,9 @@ const CSS = `
 #merge-layer.open { display: flex; }
 
 #merge-topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: calc(env(safe-area-inset-top, 8px) + 8px) 12px 8px;
+  display: flex; align-items: center; justify-content: flex-start;
+  /* Right padding leaves room for the persistent upper-right nav cluster. */
+  padding: calc(env(safe-area-inset-top, 8px) + 8px) 130px 8px 12px;
   gap: 8px;
 }
 #merge-hearts {
@@ -33,14 +34,6 @@ const CSS = `
   padding: 5px 12px 5px 8px; font-weight: 800; font-size: 18px;
 }
 #merge-hearts .ico { width: 22px; height: 22px; }
-#merge-back {
-  border: none; cursor: pointer;
-  background: #ffd23f; color: #3a2a00;
-  font-weight: 800; font-size: 15px;
-  border-radius: 999px; padding: 8px 16px;
-  box-shadow: 0 3px 0 #c99700;
-}
-#merge-back:active { transform: translateY(2px); box-shadow: 0 1px 0 #c99700; }
 
 #merge-orders {
   display: flex; gap: 8px; padding: 4px 12px 10px;
@@ -222,8 +215,7 @@ export class MergeLayer {
 
   constructor(
     parent: HTMLElement,
-    private state: MergeState,
-    private onBack: () => void
+    private state: MergeState
   ) {
     if (!document.getElementById(STYLE_ID)) {
       const st = document.createElement("style");
@@ -240,7 +232,6 @@ export class MergeLayer {
           <span class="ico">${heartSVG()}</span>
           <span id="merge-hearts-count">0</span>
         </div>
-        <button id="merge-back">← Pond</button>
       </div>
       <div id="merge-orders"></div>
       <div id="merge-grid-wrap"><div id="merge-grid"></div></div>
@@ -280,11 +271,6 @@ export class MergeLayer {
     this.ghost = document.createElement("div");
     this.ghost.id = "merge-ghost";
     parent.appendChild(this.ghost);
-
-    (this.root.querySelector("#merge-back") as HTMLButtonElement).addEventListener(
-      "click",
-      () => this.onBack()
-    );
 
     // Suitcase: unlock when locked, otherwise open/close the storage panel.
     this.suitcase.addEventListener("click", () => {

@@ -91,11 +91,13 @@ export class Character {
     this.polePivot.add(this.rodTip);
   }
 
-  // pull in 0..1: 0 = rest (pointed at pool), 1 = fully pulled back over shoulder.
+  // pull in 0..1: 0 = rest (pointed at pool), 1 = fully reared back over shoulder.
   setPullback(pull: number) {
     const p = CONFIG.player;
     this.poleAngle = MathUtils.lerp(p.restPoleAngle, p.pullbackPoleAngle, pull);
-    // Negative rotation.x tips the rod up/forward; positive tips it back.
+    // The rod points along local +Z, so rotation.x rotates its tip in the Y/Z
+    // plane: more negative lifts the tip up and swings it back over the shoulder,
+    // while positive would dip it down and forward into the pond.
     this.polePivot.rotation.x = this.poleAngle;
   }
 
